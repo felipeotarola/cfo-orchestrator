@@ -6,39 +6,39 @@ import { createServerSupabaseClient } from "@/lib/supabase/server"
 
 export async function POST(request: NextRequest) {
   try {
-    console.log("[v0] Chat API: Starting request processing")
+    console.log("Chat API: Starting request processing")
     const { message } = await request.json()
-    console.log("[v0] Chat API: Received message:", message)
+    console.log(" Chat API: Received message:", message)
 
     if (!message) {
-      console.log("[v0] Chat API: No message provided")
+      console.log("Chat API: No message provided")
       return NextResponse.json({ error: "Message is required" }, { status: 400 })
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      console.error("[v0] Chat API: Missing OPENAI_API_KEY environment variable")
+      console.error("Chat API: Missing OPENAI_API_KEY environment variable")
       return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 })
     }
 
     // Initialize Supabase client with better error handling
     let supabase
     try {
-      console.log("[v0] Chat API: Initializing Supabase client")
+      console.log("Chat API: Initializing Supabase client")
       supabase = await createServerSupabaseClient()
-      console.log("[v0] Chat API: Supabase client initialized successfully")
+      console.log("Chat API: Supabase client initialized successfully")
     } catch (error) {
-      console.error("[v0] Chat API: Supabase initialization error:", error)
+      console.error("Chat API: Supabase initialization error:", error)
       return NextResponse.json({ error: "Database connection failed" }, { status: 500 })
     }
 
     // Initialize CFO Orchestrator with database access
-    console.log("[v0] Chat API: Initializing CFO Orchestrator")
+    console.log("Chat API: Initializing CFO Orchestrator")
     const orchestrator = new CFOOrchestrator(supabase)
 
     // Process the message through the orchestrator
-    console.log("[v0] Chat API: Processing message through orchestrator")
+    console.log("Chat API: Processing message through orchestrator")
     const orchestrationResult = await orchestrator.processMessage(message)
-    console.log("[v0] Chat API: Orchestration result:", JSON.stringify(orchestrationResult, null, 2))
+    console.log("Chat API: Orchestration result:", JSON.stringify(orchestrationResult, null, 2))
 
     // Generate AI response using OpenAI
     const { text } = await generateText({
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       Please provide a CFO-level response based on the agent analysis above.`,
     })
 
-    console.log("[v0] Chat API: Generated AI response:", text)
+    console.log("Chat API: Generated AI response:", text)
 
     const response = {
       response: text,
@@ -71,10 +71,10 @@ export async function POST(request: NextRequest) {
       insights: orchestrationResult.insights,
     }
 
-    console.log("[v0] Chat API: Sending response:", JSON.stringify(response, null, 2))
+    console.log("Chat API: Sending response:", JSON.stringify(response, null, 2))
     return NextResponse.json(response)
   } catch (error) {
-    console.error("[v0] Chat API: Error occurred:", error)
+    console.error("Chat API: Error occurred:", error)
     return NextResponse.json(
       {
         error: "Failed to process message",

@@ -96,6 +96,8 @@ export class InvoicingAgent implements Agent {
     switch (taskType) {
       case "generate":
         return await this.generateInvoice(task)
+      case "view":
+        return await this.viewInvoices(task)
       case "track":
         return await this.trackPayments(task)
       case "remind":
@@ -112,6 +114,7 @@ export class InvoicingAgent implements Agent {
   private determineTaskType(description: string): string {
     const desc = description.toLowerCase()
     if (desc.includes("generate") || desc.includes("create") || desc.includes("new invoice")) return "generate"
+    if (desc.includes("show") || desc.includes("list") || desc.includes("display") || desc.includes("find") || desc.includes("get")) return "view"
     if (desc.includes("track") || desc.includes("payment") || desc.includes("status")) return "track"
     if (desc.includes("remind") || desc.includes("overdue") || desc.includes("follow up")) return "remind"
     if (desc.includes("recurring") || desc.includes("subscription") || desc.includes("repeat")) return "recurring"
@@ -119,15 +122,139 @@ export class InvoicingAgent implements Agent {
     return "overview"
   }
 
+  private async viewInvoices(task: AgentTask): Promise<AgentResponse> {
+    try {
+      console.log("InvoicingAgent: Starting invoice view for task:", task.description)
+
+      // Extract client name from various patterns
+      let clientName = null
+      
+      // Strategy: Look for specific client names we know exist in the database
+      const knownClients = ['joakim', 'anna', 'erik', 'sofia', 'magnus', 'emma']
+      const desc = task.description.toLowerCase()
+      
+      // Find any known client name mentioned in the request
+      for (const client of knownClients) {
+        if (desc.includes(client)) {
+          clientName = client
+          break
+        }
+      }
+      
+      // If no known client found, try pattern matching for new names
+      if (!clientName) {
+        // Pattern 1: "Joakim's invoices" 
+        const possessiveMatch = task.description.match(/(\w+)(?:'s?)\s+invoices?/i)
+        if (possessiveMatch && !['me', 'my', 'our', 'their', 'his', 'her'].includes(possessiveMatch[1].toLowerCase())) {
+          clientName = possessiveMatch[1]
+        }
+        
+        // Pattern 2: "invoices for Joakim" or "invoices from Joakim"  
+        if (!clientName) {
+          const forFromMatch = task.description.match(/invoices?\s+(?:for|from)\s+(\w+)/i)
+          if (forFromMatch) {
+            clientName = forFromMatch[1]
+          }
+        }
+      }
+      
+      console.log("[v0] InvoicingAgent: Extracted client name:", clientName)
+
+      let query = this.supabase
+        .from("invoices")
+        .select(`
+          *,
+          clients!inner(name, email, company),
+          invoice_line_items(*)
+        `)
+
+      if (clientName) {
+        query = query.ilike("clients.name", `%${clientName}%`)
+      }
+
+      const { data: invoices, error } = await query.order("issue_date", { ascending: false })
+
+      if (error) {
+        console.log("InvoicingAgent: Invoice query error:", error)
+        throw error
+      }
+
+      if (!invoices || invoices.length === 0) {
+        return {
+          success: true,
+          message: clientName 
+            ? `Inga fakturor hittades för ${clientName}.`
+            : "Inga fakturor hittades.",
+          data: { invoices: [], clientName },
+          insights: ["Inga fakturor att visa"],
+          suggestions: ["Skapa en ny faktura", "Kontrollera stavningen av klientnamnet"]
+        }
+      }
+
+      const totalAmount = invoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0)
+      const paidInvoices = invoices.filter(inv => inv.status === "paid")
+      const pendingInvoices = invoices.filter(inv => inv.status === "pending")
+
+      const invoicesSummary = {
+        invoices: invoices.map(inv => ({
+          invoiceNumber: inv.invoice_number,
+          clientName: inv.clients?.name || "Okänd klient",
+          issueDate: inv.issue_date,
+          dueDate: inv.due_date,
+          amount: Number(inv.total_amount),
+          status: inv.status,
+          notes: inv.notes,
+          lineItemsCount: inv.invoice_line_items?.length || 0
+        })),
+        summary: {
+          totalInvoices: invoices.length,
+          totalAmount: totalAmount,
+          paidAmount: paidInvoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0),
+          pendingAmount: pendingInvoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0),
+          clientName: clientName
+        }
+      }
+
+      const statusSummary = clientName 
+        ? `${invoices.length} fakturor för ${clientName}: ${paidInvoices.length} betalda, ${pendingInvoices.length} väntande`
+        : `${invoices.length} fakturor totalt: ${paidInvoices.length} betalda, ${pendingInvoices.length} väntande`
+
+      return {
+        success: true,
+        data: invoicesSummary,
+        message: `${statusSummary}. Totalt värde: ${totalAmount.toLocaleString()} SEK.`,
+        insights: [
+          `Visar ${invoices.length} fakturor`,
+          `${paidInvoices.length} betalda fakturor`,
+          `${pendingInvoices.length} väntande betalningar`,
+          clientName ? `Alla fakturor för ${clientName}` : "Alla fakturor i systemet"
+        ],
+        suggestions: [
+          "Granska väntande fakturor",
+          "Skicka påminnelser för förfallna fakturor",
+          "Exportera fakturarapport",
+          "Skapa ny faktura för denna klient"
+        ]
+      }
+    } catch (error) {
+      console.log("InvoicingAgent: Error viewing invoices:", error)
+      return {
+        success: false,
+        message: `Fel vid hämtning av fakturor: ${error instanceof Error ? error.message : String(error)}`,
+        data: null,
+      }
+    }
+  }
+
   private async generateInvoice(task: AgentTask): Promise<AgentResponse> {
     try {
-      console.log("[v0] InvoicingAgent: Starting invoice generation for task:", task.description)
+      console.log("InvoicingAgent: Starting invoice generation for task:", task.description)
 
       const clientNameMatch = task.description.match(/(?:invoice|bill)\s+(?:to\s+)?(\w+)/i)
       const clientName = clientNameMatch ? clientNameMatch[1] : null
-      console.log("[v0] InvoicingAgent: Extracted client name:", clientName)
+      console.log("InvoicingAgent: Extracted client name:", clientName)
 
-      let clientQuery = this.supabase.from("clients").select("*").eq("is_active", true)
+      let clientQuery = this.supabase.from("clients").select("*")
 
       if (clientName) {
         clientQuery = clientQuery.ilike("name", `%${clientName}%`)
@@ -136,13 +263,13 @@ export class InvoicingAgent implements Agent {
       const { data: clients, error: clientError } = await clientQuery.limit(1)
 
       if (clientError) {
-        console.log("[v0] InvoicingAgent: Client query error:", clientError)
+        console.log("InvoicingAgent: Client query error:", clientError)
         throw clientError
       }
 
       const client = clients?.[0]
       if (!client) {
-        console.log("[v0] InvoicingAgent: No client found for:", clientName)
+        console.log("InvoicingAgent: No client found for:", clientName)
         return {
           success: false,
           message: clientName ? `Client "${clientName}" not found` : "No active clients found",
@@ -150,7 +277,7 @@ export class InvoicingAgent implements Agent {
         }
       }
 
-      console.log("[v0] InvoicingAgent: Found client:", client.name)
+      console.log("InvoicingAgent: Found client:", client.name)
 
       const { data: lastInvoice, error: lastInvoiceError } = await this.supabase
         .from("invoices")
@@ -163,10 +290,10 @@ export class InvoicingAgent implements Agent {
         .limit(1)
 
       if (lastInvoiceError) {
-        console.log("[v0] InvoicingAgent: Error fetching last invoice:", lastInvoiceError)
+        console.log("InvoicingAgent: Error fetching last invoice:", lastInvoiceError)
       }
 
-      console.log("[v0] InvoicingAgent: Last invoice found:", lastInvoice?.[0]?.invoice_number || "None")
+      console.log("InvoicingAgent: Last invoice found:", lastInvoice?.[0]?.invoice_number || "None")
 
       const { data: allInvoices } = await this.supabase
         .from("invoices")
@@ -178,7 +305,7 @@ export class InvoicingAgent implements Agent {
         ? `INV-2025-${String(Number.parseInt(allInvoices[0].invoice_number.split("-")[2]) + 1).padStart(3, "0")}`
         : "INV-2025-001"
 
-      console.log("[v0] InvoicingAgent: Generated invoice number:", nextNumber)
+      console.log("InvoicingAgent: Generated invoice number:", nextNumber)
 
       const amountMatch = task.description.match(/(\d+(?:,\d{3})*(?:\.\d{2})?)\s*(?:SEK|kr|$)/i)
       const requestedAmount = amountMatch ? Number.parseFloat(amountMatch[1].replace(/,/g, "")) : null
@@ -188,7 +315,7 @@ export class InvoicingAgent implements Agent {
       const taxAmount = Math.round(baseAmount * taxRate)
       const totalAmount = baseAmount + taxAmount
 
-      console.log("[v0] InvoicingAgent: Invoice amounts - Base:", baseAmount, "Tax:", taxAmount, "Total:", totalAmount)
+      console.log("InvoicingAgent: Invoice amounts - Base:", baseAmount, "Tax:", taxAmount, "Total:", totalAmount)
 
       const newInvoiceData = {
         invoice_number: nextNumber,
@@ -204,7 +331,7 @@ export class InvoicingAgent implements Agent {
         notes: task.description.includes("same details") ? "Based on previous invoice details" : null,
       }
 
-      console.log("[v0] InvoicingAgent: Creating invoice with data:", newInvoiceData)
+      console.log("InvoicingAgent: Creating invoice with data:", newInvoiceData)
 
       const { data: createdInvoice, error: createError } = await this.supabase
         .from("invoices")
@@ -213,27 +340,30 @@ export class InvoicingAgent implements Agent {
         .single()
 
       if (createError) {
-        console.log("[v0] InvoicingAgent: Error creating invoice:", createError)
+        console.log("InvoicingAgent: Error creating invoice:", createError)
         throw createError
       }
 
-      console.log("[v0] InvoicingAgent: Invoice created successfully:", createdInvoice.id)
+      console.log("InvoicingAgent: Invoice created successfully:", createdInvoice.id)
 
       const lineItems = []
 
       if (lastInvoice?.[0]?.invoice_line_items?.length > 0 && task.description.includes("same details")) {
         // Copy line items from last invoice
-        for (const item of lastInvoice[0].invoice_line_items) {
-          const newItem = {
-            invoice_id: createdInvoice.id,
-            description: item.description,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            total_amount: item.total_amount,
+        const lastInvoiceData = lastInvoice?.[0]
+        if (lastInvoiceData?.invoice_line_items) {
+          for (const item of lastInvoiceData.invoice_line_items) {
+            const newItem = {
+              invoice_id: createdInvoice.id,
+              description: item.description,
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              line_total: item.line_total,
+            }
+            lineItems.push(newItem)
           }
-          lineItems.push(newItem)
         }
-        console.log("[v0] InvoicingAgent: Copying", lineItems.length, "line items from last invoice")
+        console.log("InvoicingAgent: Copying", lineItems.length, "line items from last invoice")
       } else {
         // Create default line items
         const defaultItems = [
@@ -242,27 +372,27 @@ export class InvoicingAgent implements Agent {
             description: "Konsulttjänster - Systemutveckling",
             quantity: 1,
             unit_price: baseAmount * 0.6,
-            total_amount: baseAmount * 0.6,
+            line_total: baseAmount * 0.6,
           },
           {
             invoice_id: createdInvoice.id,
             description: "Projektledning och koordination",
             quantity: 1,
             unit_price: baseAmount * 0.4,
-            total_amount: baseAmount * 0.4,
+            line_total: baseAmount * 0.4,
           },
         ]
         lineItems.push(...defaultItems)
-        console.log("[v0] InvoicingAgent: Created", lineItems.length, "default line items")
+        console.log("InvoicingAgent: Created", lineItems.length, "default line items")
       }
 
       if (lineItems.length > 0) {
         const { error: lineItemError } = await this.supabase.from("invoice_line_items").insert(lineItems)
 
         if (lineItemError) {
-          console.log("[v0] InvoicingAgent: Error creating line items:", lineItemError)
+          console.log("InvoicingAgent: Error creating line items:", lineItemError)
         } else {
-          console.log("[v0] InvoicingAgent: Line items created successfully")
+          console.log("InvoicingAgent: Line items created successfully")
         }
       }
 
@@ -273,7 +403,7 @@ export class InvoicingAgent implements Agent {
 
       const invoiceNumber = clientInvoiceCount || 1
 
-      console.log("[v0] InvoicingAgent: This is invoice #", invoiceNumber, "for client", client.name)
+      console.log("InvoicingAgent: This is invoice #", invoiceNumber, "for client", client.name)
 
       const invoiceAnalysis = {
         invoice: createdInvoice,
@@ -305,10 +435,10 @@ export class InvoicingAgent implements Agent {
         ],
       }
     } catch (error) {
-      console.log("[v0] InvoicingAgent: Fatal error:", error)
+      console.log("InvoicingAgent: Fatal error:", error)
       return {
         success: false,
-        message: `Fel vid skapande av faktura: ${error.message}`,
+        message: `Fel vid skapande av faktura: ${error instanceof Error ? error.message : String(error)}`,
         data: null,
       }
     }
@@ -371,7 +501,7 @@ export class InvoicingAgent implements Agent {
     } catch (error) {
       return {
         success: false,
-        message: `Error tracking payments: ${error.message}`,
+        message: `Error tracking payments: ${error instanceof Error ? error.message : String(error)}`,
         data: null,
       }
     }
@@ -445,7 +575,7 @@ export class InvoicingAgent implements Agent {
     } catch (error) {
       return {
         success: false,
-        message: `Error processing reminders: ${error.message}`,
+        message: `Error processing reminders: ${error instanceof Error ? error.message : String(error)}`,
         data: null,
       }
     }
@@ -459,7 +589,7 @@ export class InvoicingAgent implements Agent {
           *,
           clients (name, email)
         `)
-        .eq("is_active", true)
+        .eq("status", "active")
 
       if (error) throw error
 
@@ -516,7 +646,7 @@ export class InvoicingAgent implements Agent {
     } catch (error) {
       return {
         success: false,
-        message: `Error managing recurring billing: ${error.message}`,
+        message: `Error managing recurring billing: ${error instanceof Error ? error.message : String(error)}`,
         data: null,
       }
     }
@@ -577,7 +707,7 @@ export class InvoicingAgent implements Agent {
     } catch (error) {
       return {
         success: false,
-        message: `Error analyzing metrics: ${error.message}`,
+        message: `Error analyzing metrics: ${error instanceof Error ? error.message : String(error)}`,
         data: null,
       }
     }
@@ -593,7 +723,6 @@ export class InvoicingAgent implements Agent {
       const { data: clients, error: clientError } = await this.supabase
         .from("clients")
         .select("*")
-        .eq("is_active", true)
 
       if (invError || clientError) throw invError || clientError
 
@@ -666,7 +795,7 @@ export class InvoicingAgent implements Agent {
     } catch (error) {
       return {
         success: false,
-        message: `Error generating overview: ${error.message}`,
+        message: `Error generating overview: ${error instanceof Error ? error.message : String(error)}`,
         data: null,
       }
     }

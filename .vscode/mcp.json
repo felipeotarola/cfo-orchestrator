@@ -1,0 +1,42 @@
+{
+  // Inputs: prompted once, stored securely; never commit secret values.
+  "inputs": [
+    { "type": "promptString", "id": "supabase-access-token", "description": "Supabase personal access token", "password": true },
+    { "type": "promptString", "id": "github_token", "description": "GitHub Personal Access Token (repo scope)", "password": true },
+    { "type": "promptString", "id": "firecrawl_api_key", "description": "Firecrawl API Key", "password": true },
+    { "type": "promptString", "id": "codegpt_api_key", "description": "CodeGPT API Key", "password": true },
+    { "type": "promptString", "id": "codegpt_org_id", "description": "CodeGPT Org ID", "password": false },
+    { "type": "promptString", "id": "codegpt_graph_id", "description": "CodeGPT Graph ID", "password": false },
+    { "type": "promptString", "id": "shadcn_github_key", "description": "GitHub token for shadcn ui server", "password": true }
+  ],
+  "servers": {
+    "supabase": {
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase@latest", "--access-token", "${input:supabase-access-token}" ]
+    },
+    "Firecrawl": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": { "FIRECRAWL_API_KEY": "${input:firecrawl_api_key}" }
+    },
+    "Deep Graph MCP": {
+      "command": "npx",
+      "args": ["-y", "mcp-code-graph@latest"],
+      "env": {
+        "CODEGPT_API_KEY": "${input:codegpt_api_key}",
+        "CODEGPT_ORG_ID": "${input:codegpt_org_id}",
+        "CODEGPT_GRAPH_ID": "${input:codegpt_graph_id}"
+      }
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github", "--toolsets", "issues"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${input:github_token}" }
+    },
+    "shadcn-ui": {
+      "command": "npx",
+      "args": ["@jpisnice/shadcn-ui-mcp-server", "--github-api-key", "${input:shadcn_github_key}" ]
+    },
+    "CopilotKit MCP": { "url": "https://mcp.copilotkit.ai/sse" }
+  }
+}

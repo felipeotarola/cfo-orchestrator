@@ -14,6 +14,7 @@ export interface AgentResponse {
   data?: any
   message: string
   suggestions?: string[]
+  insights?: string[]
 }
 
 export interface Agent {
