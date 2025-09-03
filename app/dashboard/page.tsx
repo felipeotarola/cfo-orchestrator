@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Image from 'next/image';
+import { toast } from 'sonner';
 
 interface Invoice {
   id: string;
@@ -75,18 +76,36 @@ export default function Dashboard() {
         setInvoices(invoicesData || []);
       }
 
-      // Fetch receipts (if table exists)
+      // Fetch receipts from the correct table
       const { data: receiptsData, error: receiptsError } = await supabase
-        .from('receipt_summary')
+        .from('receipts')
         .select('*')
         .order('receipt_date', { ascending: false })
         .limit(50);
 
       if (receiptsError) {
-        console.log('Receipts table not available yet:', receiptsError.message);
+        console.log('Receipts table error:', receiptsError.message);
         setReceipts([]);
       } else {
-        setReceipts(receiptsData || []);
+        // For each receipt, get its primary attachment/image
+        const receiptsWithImages = await Promise.all(
+          (receiptsData || []).map(async (receipt) => {
+            const { data: attachmentData } = await supabase
+              .from('attachments')
+              .select('file_url, file_type')
+              .eq('entity_type', 'receipt')
+              .eq('entity_id', receipt.id)
+              .eq('is_primary', true)
+              .single();
+
+            return {
+              ...receipt,
+              primary_image_url: attachmentData?.file_url || null,
+              attachment_count: 1 // We'll get proper count if needed
+            };
+          })
+        );
+        setReceipts(receiptsWithImages);
       }
 
       // Fetch attachments
@@ -122,6 +141,84 @@ export default function Dashboard() {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const deleteInvoice = async (invoiceId: string, invoiceNumber: string) => {
+    if (!confirm(`Are you sure you want to delete invoice ${invoiceNumber}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('invoices')
+        .delete()
+        .eq('id', invoiceId);
+
+      if (error) {
+        toast.error('Error deleting invoice: ' + error.message);
+      } else {
+        toast.success(`Invoice ${invoiceNumber} deleted successfully`);
+        fetchData(); // Refresh the data
+      }
+    } catch (error) {
+      toast.error('Error deleting invoice: ' + (error as Error).message);
+    }
+  };
+
+  const deleteReceipt = async (receiptId: string, receiptNumber: string) => {
+    if (!confirm(`Are you sure you want to delete receipt ${receiptNumber}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      // Delete associated attachments first
+      const { error: attachmentError } = await supabase
+        .from('attachments')
+        .delete()
+        .eq('entity_type', 'receipt')
+        .eq('entity_id', receiptId);
+
+      if (attachmentError) {
+        console.warn('Error deleting receipt attachments:', attachmentError);
+      }
+
+      // Delete the receipt
+      const { error } = await supabase
+        .from('receipts')
+        .delete()
+        .eq('id', receiptId);
+
+      if (error) {
+        toast.error('Error deleting receipt: ' + error.message);
+      } else {
+        toast.success(`Receipt ${receiptNumber} deleted successfully`);
+        fetchData(); // Refresh the data
+      }
+    } catch (error) {
+      toast.error('Error deleting receipt: ' + (error as Error).message);
+    }
+  };
+
+  const deleteAttachment = async (attachmentId: string, fileName: string) => {
+    if (!confirm(`Are you sure you want to delete attachment "${fileName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('attachments')
+        .delete()
+        .eq('id', attachmentId);
+
+      if (error) {
+        toast.error('Error deleting attachment: ' + error.message);
+      } else {
+        toast.success(`Attachment "${fileName}" deleted successfully`);
+        fetchData(); // Refresh the data
+      }
+    } catch (error) {
+      toast.error('Error deleting attachment: ' + (error as Error).message);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -236,6 +333,9 @@ export default function Dashboard() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Attachments
                     </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -267,11 +367,19 @@ export default function Dashboard() {
                           <span className="text-gray-400">No attachments</span>
                         )}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button
+                          onClick={() => deleteInvoice(invoice.id, invoice.invoice_number)}
+                          className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-3 py-1 rounded-md transition-colors"
+                        >
+                          🗑️ Delete
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {invoices.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                      <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
                         No invoices found
                       </td>
                     </tr>
@@ -304,6 +412,9 @@ export default function Dashboard() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Image
                     </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -327,28 +438,39 @@ export default function Dashboard() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {receipt.primary_image_url ? (
-                          <div className="flex items-center">
+                          <div className="flex items-center space-x-3">
                             <Image
                               src={receipt.primary_image_url}
                               alt={`Receipt ${receipt.receipt_number}`}
-                              width={40}
-                              height={40}
-                              className="rounded-md object-cover"
+                              width={60}
+                              height={60}
+                              className="rounded-lg object-cover border shadow-sm"
                             />
-                            <span className="ml-2 text-xs text-gray-500">
-                              {receipt.attachment_count > 1 && `+${receipt.attachment_count - 1} more`}
-                            </span>
+                            <div className="text-xs text-gray-500">
+                              <div>Primary image</div>
+                              {receipt.attachment_count > 1 && (
+                                <div>+{receipt.attachment_count - 1} more</div>
+                              )}
+                            </div>
                           </div>
                         ) : (
                           <span className="text-gray-400 text-sm">No image</span>
                         )}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button
+                          onClick={() => deleteReceipt(receipt.id, receipt.receipt_number)}
+                          className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-3 py-1 rounded-md transition-colors"
+                        >
+                          🗑️ Delete
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {receipts.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
-                        No receipts found. Run SETUP_DATABASE.sql to create receipts table.
+                      <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                        No receipts found
                       </td>
                     </tr>
                   )}
@@ -379,6 +501,9 @@ export default function Dashboard() {
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Preview
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
                     </th>
                   </tr>
                 </thead>
@@ -413,9 +538,9 @@ export default function Dashboard() {
                           <Image
                             src={attachment.file_url}
                             alt={attachment.file_name}
-                            width={40}
-                            height={40}
-                            className="rounded-md object-cover"
+                            width={50}
+                            height={50}
+                            className="rounded-md object-cover border shadow-sm"
                           />
                         ) : (
                           <a
@@ -424,16 +549,24 @@ export default function Dashboard() {
                             rel="noopener noreferrer"
                             className="text-blue-600 hover:text-blue-900 text-sm"
                           >
-                            View
+                            📄 View
                           </a>
                         )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button
+                          onClick={() => deleteAttachment(attachment.id, attachment.file_name)}
+                          className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-3 py-1 rounded-md transition-colors"
+                        >
+                          🗑️ Delete
+                        </button>
                       </td>
                     </tr>
                   ))}
                   {attachments.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
-                        No attachments found. Run SETUP_DATABASE.sql to create attachments table.
+                      <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                        No attachments found
                       </td>
                     </tr>
                   )}

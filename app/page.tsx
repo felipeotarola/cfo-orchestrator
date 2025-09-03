@@ -49,7 +49,7 @@ export default function CFOPlatform() {
         id: "1",
         role: "assistant",
         parts: [
-          { type: 'text', text: "Hello! I'm your AI CFO. I can help you with bookkeeping, invoicing, financial reporting, and strategic insights. What would you like to work on today?" }
+          { type: 'text', text: "Hello! I'm your AI CFO assistant. I have access to your complete financial database including transactions, invoices, receipts, clients, vendors, and chart of accounts. I can help you with:\n\n• Financial reporting and analysis\n• Invoice creation and management\n• Expense tracking and categorization\n• Receipt processing and bookkeeping\n• Budget analysis and forecasting\n• Cash flow management\n• Tax preparation support\n\nWhat financial task would you like me to help you with today?" }
         ],
       },
     ],
@@ -69,10 +69,10 @@ export default function CFOPlatform() {
   }, [messages])
 
   const quickActions = [
-    { label: "Upload receipt", action: "upload_receipt", icon: Paperclip },
-    { label: "Create new invoice", action: "create_invoice", icon: FileText },
-    { label: "Generate financial report", action: "generate_report", icon: TrendingUp },
-    { label: "Record expense", action: "record_expense", icon: Calculator },
+    { label: "Visa finansiell översikt", action: "financial_overview", icon: TrendingUp },
+    { label: "Skapa ny faktura", action: "create_invoice", icon: FileText },
+    { label: "Registrera kvitto", action: "record_receipt", icon: Paperclip },
+    { label: "Visa senaste transaktioner", action: "recent_transactions", icon: Calculator },
   ]
 
   const formatFileSize = (bytes: number) => {
@@ -192,10 +192,11 @@ export default function CFOPlatform() {
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <ScrollArea className="flex-1 px-6 py-4">
-            <div className="space-y-6 max-w-4xl mx-auto">
-              {messages.map((message) => (
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="flex-1 overflow-hidden">
+            <ScrollArea className="h-full px-6 py-4">
+              <div className="space-y-6 max-w-4xl mx-auto pb-4">
+                {messages.map((message) => (
                 <div
                   key={message.id}
                   className={`flex gap-4 ${
@@ -210,7 +211,7 @@ export default function CFOPlatform() {
                           : "bg-accent text-accent-foreground"
                       }`}
                     >
-                      {message.role === "user" ? "U" : "AI"}
+                      {message.role === "user" ? "U" : "CFO"}
                     </AvatarFallback>
                   </Avatar>
                   <div
@@ -222,12 +223,8 @@ export default function CFOPlatform() {
                   >
                     <div className="prose prose-sm max-w-none">
                       {/* Handle different content types */}
-                      {typeof message.content === 'string' ? (
-                        <p className="text-sm text-foreground whitespace-pre-wrap m-0">
-                          {message.content}
-                        </p>
-                      ) : (
-                        message.parts?.map((part: any, index: number) => {
+                      {message.parts ? (
+                        message.parts.map((part: any, index: number) => {
                           if (part.type === 'text') {
                             return (
                               <p key={index} className="text-sm text-foreground whitespace-pre-wrap m-0">
@@ -257,6 +254,10 @@ export default function CFOPlatform() {
                           }
                           return null
                         })
+                      ) : (
+                        <p className="text-sm text-foreground whitespace-pre-wrap m-0">
+                          {(message as any).content || ''}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -267,7 +268,7 @@ export default function CFOPlatform() {
                 <div className="flex gap-4">
                   <Avatar className="w-8 h-8 shadow-md">
                     <AvatarFallback className="bg-accent text-accent-foreground text-xs font-bold">
-                      AI
+                      CFO
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 rounded-xl p-4 shadow-sm border bg-card border-border/50 mr-12">
@@ -284,7 +285,7 @@ export default function CFOPlatform() {
               <div ref={messagesEndRef} />
             </div>
           </ScrollArea>
-
+</div>
           <div className="flex-shrink-0 p-6 border-t border-border/50 bg-card/50 backdrop-blur-sm">
             {files && files.length > 0 && (
               <div className="mb-4 flex flex-wrap gap-2">
