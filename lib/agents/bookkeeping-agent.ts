@@ -121,15 +121,15 @@ export class BookkeepingAgent implements Agent {
 
       if (error) throw error
 
-      const processedTransactions =
+      const processedTransactions: Transaction[] =
         transactions?.map((t) => ({
           id: t.id,
           date: t.transaction_date,
           description: t.description,
           amount: t.total_amount,
           type: t.transaction_type.toLowerCase() as "income" | "expense",
-          status: "pending" as const,
-          account: t.transaction_line_items?.[0]?.chart_of_accounts?.account_code || "1000",
+          status: "pending" as "pending" | "categorized" | "flagged",
+          account: t.transaction_line_items?.[0]?.chart_of_accounts?.[0]?.account_code || "1000",
         })) || []
 
       // Apply categorization rules
