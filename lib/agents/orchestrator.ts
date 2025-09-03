@@ -33,7 +33,7 @@ export class CFOOrchestrator {
     agentActivities: Array<{ agent: string; action: string; status: string; result?: any }>
     insights: string[]
   }> {
-    const request = this.analyzeUserIntent(userMessage)
+    const request = await this.analyzeUserIntent(userMessage)
     const agentActivities = []
     const insights = []
 
@@ -57,7 +57,7 @@ export class CFOOrchestrator {
             agent: agent.name,
             action: task.description,
             status: result.success ? "completed" : "failed",
-            result: result.data,
+            result: result.success ? result.data : { error: result.message },
           })
 
           if (result.success && result.insights) {
@@ -81,10 +81,66 @@ export class CFOOrchestrator {
     }
   }
 
-  private analyzeUserIntent(userMessage: string): CFORequest {
+  private async analyzeUserIntent(userMessage: string): Promise<CFORequest> {
+    const { openai } = await import('@ai-sdk/openai')
+    const { generateObject } = await import('ai')
+    const { z } = await import('zod')
+
+    try {
+      const { object: analysis } = await generateObject({
+        model: openai('gpt-4o-mini'),
+        schema: z.object({
+          intent: z.enum(['invoicing', 'bookkeeping', 'reporting', 'general']),
+          requiredAgents: z.array(z.enum(['Invoicing Agent', 'Bookkeeping Agent', 'Reporting Agent'])),
+          reasoning: z.string(),
+          entities: z.object({
+            clientName: z.string().optional(),
+            amount: z.number().optional(),
+            invoiceNumber: z.string().optional(),
+            action: z.enum(['create', 'view', 'update', 'delete', 'analyze']).optional(),
+          }),
+          confidence: z.number().min(0).max(1),
+        }),
+        prompt: `Analyze this user message and determine what financial task they want to perform:
+        "${userMessage}"
+
+        Consider these patterns:
+        - Invoicing: creating invoices, viewing invoices, payment tracking, client billing
+        - Bookkeeping: expense categorization, transaction analysis, account reconciliation
+        - Reporting: financial reports, summaries, insights, analytics
+        
+        Look for:
+        - Client names (like "Joakim", "Joakim Svensson")
+        - Action words (create, show, view, generate, analyze)
+        - Financial terms (invoice, payment, expense, report)
+        - Amounts or numbers (120000, SEK)
+        
+        Examples:
+        - "create a new for him Joakim Svensson" → invoicing (create invoice for Joakim)
+        - "show Joakim's invoices" → invoicing (view invoices)
+        - "categorize expenses" → bookkeeping
+        - "generate financial report" → reporting`,
+      })
+
+      return {
+        userMessage,
+        intent: analysis.intent,
+        entities: analysis.entities,
+        requiredAgents: analysis.requiredAgents,
+        reasoning: analysis.reasoning,
+        confidence: analysis.confidence,
+      }
+    } catch (error) {
+      console.log('AI intent analysis failed, falling back to keyword matching:', error)
+      // Fallback to simple keyword matching if AI fails
+      return this.fallbackIntentAnalysis(userMessage)
+    }
+  }
+
+  private fallbackIntentAnalysis(userMessage: string): CFORequest {
     const message = userMessage.toLowerCase()
 
-    // Simple intent recognition (in production, this would use NLP)
+    // Simple intent recognition fallback
     let intent = "general"
     const requiredAgents: string[] = []
     const entities: Record<string, any> = {}
@@ -94,7 +150,7 @@ export class CFOOrchestrator {
       requiredAgents.push("Bookkeeping Agent")
     }
 
-    if (message.includes("invoice") || message.includes("bill") || message.includes("payment")) {
+    if (message.includes("invoice") || message.includes("bill") || message.includes("payment") || message.includes("create") && (message.includes("joakim") || message.includes("client"))) {
       intent = "invoicing"
       requiredAgents.push("Invoicing Agent")
     }
@@ -119,11 +175,13 @@ export class CFOOrchestrator {
       intent,
       entities,
       requiredAgents,
+      reasoning: "Fallback keyword matching",
+      confidence: 0.5,
     }
   }
 
   private generateTaskDescription(request: CFORequest, agentType: string): string {
-    const descriptions = {
+    const descriptions: Record<string, string> = {
       bookkeeping: `Analyzing ${request.intent} request: "${request.userMessage}"`,
       invoicing: `Processing invoice-related request: "${request.userMessage}"`,
       reporting: `Generating financial insights for: "${request.userMessage}"`,
@@ -133,7 +191,7 @@ export class CFOOrchestrator {
   }
 
   private generateCFOResponse(request: CFORequest, agentActions: any[]): string {
-    const responses = {
+    const responses: Record<string, string> = {
       bookkeeping: "I've analyzed your bookkeeping data and found some key insights.",
       invoicing: "I've reviewed your invoicing and payment information.",
       reporting: "I've generated comprehensive financial reports and analysis.",
@@ -145,7 +203,7 @@ export class CFOOrchestrator {
   }
 
   private generateSuggestions(request: CFORequest): string[] {
-    const suggestions = {
+    const suggestions: Record<string, string[]> = {
       bookkeeping: [
         "Would you like me to categorize recent transactions?",
         "Should I flag any unusual expenses for review?",

@@ -194,6 +194,56 @@ export class InvoicingAgent implements Agent {
       const totalAmount = invoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0)
       const paidInvoices = invoices.filter(inv => inv.status === "paid")
       const pendingInvoices = invoices.filter(inv => inv.status === "pending")
+      const overdueInvoices = invoices.filter(inv => 
+        inv.status === "pending" && new Date(inv.due_date) < new Date()
+      )
+
+      // Format invoice details with colors and structure
+      const formatInvoiceList = (invoices: any[]) => {
+        return invoices.map(inv => {
+          const isOverdue = inv.status === "pending" && new Date(inv.due_date) < new Date()
+          const isPaid = inv.status === "paid"
+          const amount = Number(inv.total_amount).toLocaleString()
+          
+          const statusIcon = isPaid ? "✅" : isOverdue ? "🔴" : "🟡"
+          const statusText = isPaid ? "Betald" : isOverdue ? "Försenad" : "Väntande"
+          
+          return `${statusIcon} **${inv.invoice_number}** - ${amount} SEK (${statusText})\n` +
+                 `   📅 Fakturadatum: ${inv.issue_date} | Förfallodatum: ${inv.due_date}\n` +
+                 `   📝 ${inv.notes || 'Ingen kommentar'}`
+        }).join('\n\n')
+      }
+
+      // Create structured summary with visual highlights
+      const createSummary = () => {
+        const totalFormatted = totalAmount.toLocaleString()
+        const paidAmount = paidInvoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0)
+        const pendingAmount = pendingInvoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0)
+        const overdueAmount = overdueInvoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0)
+        
+        let summary = `## 📊 Fakturaöversikt${clientName ? ` för ${clientName}` : ''}\n\n`
+        
+        // Key metrics with colors
+        summary += `### 💰 Ekonomisk sammanfattning\n`
+        summary += `• **Totalt värde:** ${totalFormatted} SEK\n`
+        summary += `• 🟢 **Betalda:** ${paidAmount.toLocaleString()} SEK (${paidInvoices.length} st)\n`
+        summary += `• 🟡 **Väntande:** ${pendingAmount.toLocaleString()} SEK (${pendingInvoices.length} st)\n`
+        
+        if (overdueInvoices.length > 0) {
+          summary += `• 🔴 **Försenade:** ${overdueAmount.toLocaleString()} SEK (${overdueInvoices.length} st)\n`
+        }
+        
+        summary += `\n### 📋 Fakturor\n\n`
+        summary += formatInvoiceList(invoices)
+        
+        // Add action items if there are overdue invoices
+        if (overdueInvoices.length > 0) {
+          summary += `\n\n### ⚠️ Åtgärder krävs\n`
+          summary += `Det finns ${overdueInvoices.length} försenade fakturor som kräver uppmärksamhet.`
+        }
+        
+        return summary
+      }
 
       const invoicesSummary = {
         invoices: invoices.map(inv => ({
@@ -204,37 +254,37 @@ export class InvoicingAgent implements Agent {
           amount: Number(inv.total_amount),
           status: inv.status,
           notes: inv.notes,
-          lineItemsCount: inv.invoice_line_items?.length || 0
+          lineItemsCount: inv.invoice_line_items?.length || 0,
+          isOverdue: inv.status === "pending" && new Date(inv.due_date) < new Date()
         })),
         summary: {
           totalInvoices: invoices.length,
           totalAmount: totalAmount,
           paidAmount: paidInvoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0),
           pendingAmount: pendingInvoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0),
-          clientName: clientName
+          overdueAmount: overdueInvoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0),
+          clientName: clientName,
+          overdueCount: overdueInvoices.length
         }
       }
-
-      const statusSummary = clientName 
-        ? `${invoices.length} fakturor för ${clientName}: ${paidInvoices.length} betalda, ${pendingInvoices.length} väntande`
-        : `${invoices.length} fakturor totalt: ${paidInvoices.length} betalda, ${pendingInvoices.length} väntande`
 
       return {
         success: true,
         data: invoicesSummary,
-        message: `${statusSummary}. Totalt värde: ${totalAmount.toLocaleString()} SEK.`,
+        message: createSummary(),
         insights: [
-          `Visar ${invoices.length} fakturor`,
-          `${paidInvoices.length} betalda fakturor`,
-          `${pendingInvoices.length} väntande betalningar`,
-          clientName ? `Alla fakturor för ${clientName}` : "Alla fakturor i systemet"
-        ],
+          `📊 ${invoices.length} fakturor visas`,
+          paidInvoices.length > 0 ? `✅ ${paidInvoices.length} betalda` : null,
+          pendingInvoices.length > 0 ? `🟡 ${pendingInvoices.length} väntande` : null,
+          overdueInvoices.length > 0 ? `🔴 ${overdueInvoices.length} försenade` : null,
+          clientName ? `👤 Klient: ${clientName}` : "🏢 Alla klienter"
+        ].filter((item): item is string => item !== null),
         suggestions: [
-          "Granska väntande fakturor",
-          "Skicka påminnelser för förfallna fakturor",
-          "Exportera fakturarapport",
-          "Skapa ny faktura för denna klient"
-        ]
+          overdueInvoices.length > 0 ? "🚨 Prioritera försenade fakturor" : null,
+          "📧 Skicka påminnelser",
+          "📊 Exportera rapport",
+          "➕ Skapa ny faktura"
+        ].filter((item): item is string => item !== null)
       }
     } catch (error) {
       console.log("InvoicingAgent: Error viewing invoices:", error)
@@ -325,19 +375,14 @@ export class InvoicingAgent implements Agent {
         subtotal: baseAmount,
         tax_amount: taxAmount,
         total_amount: totalAmount,
-        status: "Draft",
-        currency: "SEK",
+        status: "draft",
         payment_terms: client.payment_terms || 30,
         notes: task.description.includes("same details") ? "Based on previous invoice details" : null,
       }
 
       console.log("InvoicingAgent: Creating invoice with data:", newInvoiceData)
 
-      const { data: createdInvoice, error: createError } = await this.supabase
-        .from("invoices")
-        .insert([newInvoiceData])
-        .select()
-        .single()
+      const { data: createdInvoice, error: createError } = await this.safeInsertInvoice(newInvoiceData)
 
       if (createError) {
         console.log("InvoicingAgent: Error creating invoice:", createError)
@@ -346,7 +391,13 @@ export class InvoicingAgent implements Agent {
 
       console.log("InvoicingAgent: Invoice created successfully:", createdInvoice.id)
 
-      const lineItems = []
+      const lineItems: Array<{
+        invoice_id: string;
+        description: string;
+        quantity: number;
+        unit_price: number;
+        line_total: number;
+      }> = []
 
       if (lastInvoice?.[0]?.invoice_line_items?.length > 0 && task.description.includes("same details")) {
         // Copy line items from last invoice
@@ -415,23 +466,47 @@ export class InvoicingAgent implements Agent {
         isBasedOnPrevious: task.description.includes("same details") && lastInvoice?.[0],
       }
 
+      // Create formatted success message
+      const formatMessage = () => {
+        let message = `## ✅ Faktura skapad!\n\n`
+        message += `**📄 Fakturanummer:** ${createdInvoice.invoice_number}\n`
+        message += `**👤 Klient:** ${client.name}\n`
+        message += `**💰 Totalt:** ${totalAmount.toLocaleString()} SEK\n`
+        message += `**📅 Förfallodag:** ${new Date(createdInvoice.due_date).toLocaleDateString("sv-SE")}\n`
+        message += `**🏷️ Klientfaktura #:** ${invoiceNumber}\n\n`
+        
+        if (lineItems.length > 0) {
+          message += `### 📋 Fakturarader\n`
+          lineItems.forEach(item => {
+            message += `• **${item.description}** - ${item.quantity} × ${item.unit_price.toLocaleString()} SEK = ${item.line_total.toLocaleString()} SEK\n`
+          })
+          message += `\n`
+        }
+        
+        if (invoiceAnalysis.isBasedOnPrevious) {
+          message += `ℹ️ *Baserad på föregående faktura*\n`
+        }
+        
+        return message
+      }
+
       return {
         success: true,
         data: invoiceAnalysis,
-        message: `✅ Faktura ${createdInvoice.invoice_number} skapad för ${client.name} - ${totalAmount.toLocaleString()} SEK. Detta är faktura #${invoiceNumber} för denna kund.`,
+        message: formatMessage(),
         insights: [
-          `Kund: ${client.name}`,
-          `Betalningsvillkor: ${client.payment_terms || 30} dagar`,
-          `Förväntad betalning: ${invoiceAnalysis.estimatedPaymentDate}`,
-          `Fakturanummer: ${invoiceNumber} för denna kund`,
+          `👤 Kund: ${client.name}`,
+          `⏱️ Betalningsvillkor: ${client.payment_terms || 30} dagar`,
+          `📅 Förväntad betalning: ${invoiceAnalysis.estimatedPaymentDate}`,
+          `🔢 Fakturanummer ${invoiceNumber} för denna kund`
         ],
         suggestions: [
-          "Skicka fakturan via e-post till kunden",
-          "Sätt upp automatisk betalningspåminnelse",
-          "Verifiera kundens kontaktuppgifter",
+          "📧 Skicka fakturan via e-post till kunden",
+          "🔔 Sätt upp automatisk betalningspåminnelse", 
+          "✅ Verifiera kundens kontaktuppgifter",
           invoiceAnalysis.isBasedOnPrevious
-            ? "Kontrollera att tjänsterna stämmer med förra månaden"
-            : "Granska fakturarader innan utskick",
+            ? "🔍 Kontrollera att tjänsterna stämmer med förra månaden"
+            : "📝 Granska fakturarader innan utskick"
         ],
       }
     } catch (error) {
@@ -442,6 +517,41 @@ export class InvoicingAgent implements Agent {
         data: null,
       }
     }
+  }
+
+  // Insert invoice with schema-drift tolerance: if PostgREST reports an unknown
+  // column (e.g., 'currency' missing in older schema), remove it and retry.
+  private async safeInsertInvoice(payload: Record<string, any>) {
+    let working = { ...payload }
+    const maxRetries = 4
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const { data, error } = await this.supabase
+        .from("invoices")
+        .insert([working])
+        .select()
+        .single()
+
+      if (!error) return { data, error }
+
+      const code = (error as any)?.code || ""
+      const message = (error as any)?.message || ""
+      const missingColMatch = message.match(/the '\\'?([A-Za-z0-9_]+)\\'? column of 'invoices'/i)
+
+      if (code === "PGRST204" && missingColMatch) {
+        const col = missingColMatch[1]
+        if (col in working) {
+          console.warn(`InvoicingAgent: Removing unsupported column '${col}' and retrying insert`)
+          const { [col]: _removed, ...rest } = working
+          working = rest
+          continue
+        }
+      }
+
+      return { data, error }
+    }
+
+    return { data: null, error: { message: "Failed to insert invoice after retries" } as any }
   }
 
   private async trackPayments(task: AgentTask): Promise<AgentResponse> {
@@ -776,21 +886,57 @@ export class InvoicingAgent implements Agent {
         alerts,
       }
 
+      // Create formatted overview message
+      const createOverviewMessage = () => {
+        let message = `## 📈 Fakturaöversikt - Alla klienter\n\n`
+        
+        message += `### 💰 Ekonomisk sammanfattning\n`
+        message += `• **Totala fakturor:** ${overview.totalInvoicesSent} st\n`
+        message += `• 🟢 **Intjänade intäkter:** ${totalRevenue.toLocaleString()} SEK\n`
+        message += `• 🟡 **Utestående belopp:** ${outstandingAmount.toLocaleString()} SEK\n`
+        
+        if (overdueAmount > 0) {
+          message += `• 🔴 **Försenade betalningar:** ${overdueAmount.toLocaleString()} SEK\n`
+        }
+        
+        message += `• 📊 **Genomsnittligt fakturavärde:** ${Math.round(overview.averageInvoiceValue).toLocaleString()} SEK\n\n`
+        
+        if (clientRevenue.length > 0) {
+          message += `### 🏆 Toppklienter\n`
+          clientRevenue.slice(0, 3).forEach((client, index) => {
+            const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : "🥉"
+            message += `${medal} **${client.name}** - ${client.revenue.toLocaleString()} SEK (${client.invoices} fakturor)\n`
+          })
+          message += `\n`
+        }
+        
+        if (alerts.length > 0) {
+          message += `### ⚠️ Uppmärksamhet krävs\n`
+          alerts.slice(0, 5).forEach(alert => {
+            const icon = alert.includes("overdue") ? "🔴" : "⚠️"
+            message += `${icon} ${alert}\n`
+          })
+        }
+        
+        return message
+      }
+
       return {
         success: true,
         data: overview,
-        message: `Invoicing overview: $${totalRevenue.toLocaleString()} revenue, $${outstandingAmount.toLocaleString()} outstanding.`,
+        message: createOverviewMessage(),
         insights: [
-          `${overview.totalInvoicesSent} invoices processed`,
-          `${alerts.length} items need attention`,
-          `Top client: ${clientRevenue[0]?.name || "None"}`,
-        ],
+          `📊 ${overview.totalInvoicesSent} fakturor totalt`,
+          alerts.length > 0 ? `⚠️ ${alerts.length} uppmärksamhetspunkter` : null,
+          clientRevenue[0] ? `🏆 Toppklient: ${clientRevenue[0].name}` : null,
+          overdueAmount > 0 ? `🔴 ${overdueAmount.toLocaleString()} SEK försenat` : null
+        ].filter((item): item is string => item !== null),
         suggestions: [
-          "Prioritize collection of overdue amounts",
-          "Review credit limits for top clients",
-          "Implement automated retry for failed payments",
-          "Consider offering multiple payment options",
-        ],
+          overdueAmount > 0 ? "🚨 Prioritera försenade betalningar" : null,
+          "📊 Granska kreditgränser för toppklienter",
+          "🔄 Implementera automatiska påminnelser",
+          "💳 Överväg flera betalningsalternativ"
+        ].filter((item): item is string => item !== null),
       }
     } catch (error) {
       return {

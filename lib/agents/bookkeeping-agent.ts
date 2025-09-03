@@ -186,7 +186,7 @@ export class BookkeepingAgent implements Agent {
     } catch (error) {
       return {
         success: false,
-        message: `Error processing transactions: ${error.message}`,
+        message: `Error processing transactions: ${error instanceof Error ? error.message : String(error)}`,
         data: null,
       }
     }
@@ -252,7 +252,7 @@ export class BookkeepingAgent implements Agent {
     } catch (error) {
       return {
         success: false,
-        message: `Error during reconciliation: ${error.message}`,
+        message: `Error during reconciliation: ${error instanceof Error ? error.message : String(error)}`,
         data: null,
       }
     }
@@ -299,7 +299,7 @@ export class BookkeepingAgent implements Agent {
     } catch (error) {
       return {
         success: false,
-        message: `Error validating data: ${error.message}`,
+        message: `Error validating data: ${error instanceof Error ? error.message : String(error)}`,
         data: null,
       }
     }
@@ -371,7 +371,7 @@ export class BookkeepingAgent implements Agent {
     } catch (error) {
       return {
         success: false,
-        message: `Error analyzing expenses: ${error.message}`,
+        message: `Error analyzing expenses: ${error instanceof Error ? error.message : String(error)}`,
         data: null,
       }
     }
@@ -381,8 +381,8 @@ export class BookkeepingAgent implements Agent {
     try {
       const { data: arData, error: arError } = await this.supabase
         .from("invoices")
-        .select("total_amount, paid_amount, status")
-        .neq("status", "Paid")
+        .select("total_amount, status")
+        .neq("status", "paid")
 
       const { data: apData, error: apError } = await this.supabase
         .from("transactions")
@@ -392,7 +392,8 @@ export class BookkeepingAgent implements Agent {
 
       if (arError || apError) throw arError || apError
 
-      const accountsReceivable = arData?.reduce((sum, inv) => sum + (inv.total_amount - (inv.paid_amount || 0)), 0) || 0
+      // Since we don't have paid_amount column, we'll consider unpaid invoices as full receivable
+      const accountsReceivable = arData?.reduce((sum, inv) => sum + inv.total_amount, 0) || 0
 
       const monthlyExpenses = apData?.reduce((sum, t) => sum + Math.abs(t.total_amount), 0) || 0
 
@@ -407,7 +408,7 @@ export class BookkeepingAgent implements Agent {
           "Monthly Burn Rate": monthlyExpenses,
         },
         alerts:
-          arData?.filter((inv) => inv.status === "Overdue").map((inv) => `Invoice overdue: $${inv.total_amount}`) || [],
+          arData?.filter((inv) => inv.status === "pending").map((inv) => `Invoice pending: $${inv.total_amount}`) || [],
       }
 
       return {
@@ -429,7 +430,7 @@ export class BookkeepingAgent implements Agent {
     } catch (error) {
       return {
         success: false,
-        message: `Error in financial analysis: ${error.message}`,
+        message: `Error in financial analysis: ${error instanceof Error ? error.message : String(error)}`,
         data: null,
       }
     }

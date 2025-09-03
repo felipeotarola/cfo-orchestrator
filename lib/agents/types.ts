@@ -30,6 +30,8 @@ export interface CFORequest {
   intent: string
   entities: Record<string, any>
   requiredAgents: string[]
+  reasoning?: string
+  confidence?: number
 }
 
 export interface CFOResponse {
