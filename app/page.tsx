@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Send, TrendingUp, DollarSign, FileText, Calculator, Paperclip, X, Image, FileType } from "lucide-react"
+import { Send, TrendingUp, DollarSign, FileText, Calculator, Paperclip, X, Image, FileType, Menu } from "lucide-react"
 import NextImage from 'next/image'
 
 // Convert files to data URLs for AI SDK v5
@@ -63,6 +63,8 @@ export default function CFOPlatform() {
     { name: "Reporting Agent", isActive: true, capabilities: ["Financial reports", "Analytics"] },
     { name: "Receipts Agent", isActive: true, capabilities: ["Receipt scanning", "Expense management"] },
   ])
+
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -121,6 +123,12 @@ export default function CFOPlatform() {
         <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
+              <button
+                className="md:hidden -ml-2"
+                onClick={() => setSidebarOpen(true)}
+              >
+                <Menu className="h-6 w-6" />
+              </button>
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg">
                 <DollarSign className="w-6 h-6 text-primary-foreground" />
               </div>
@@ -149,9 +157,19 @@ export default function CFOPlatform() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
-        <div className="w-80 flex-shrink-0 border-r border-border/50 bg-card/30 backdrop-blur-sm">
-          <div className="h-full flex flex-col">
+      <div className="flex-1 flex overflow-hidden relative">
+        <aside
+          className={`fixed inset-y-0 left-0 z-50 w-80 flex-shrink-0 border-r border-border/50 bg-card/30 backdrop-blur-sm transition-transform duration-200 transform md:relative md:translate-x-0 ${
+            sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+          }`}
+        >
+          <div className="h-full flex flex-col relative">
+            <button
+              className="absolute top-4 right-4 md:hidden"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <X className="h-5 w-5" />
+            </button>
             <div className="p-6 border-b border-border/50">
               <h3 className="font-bold text-foreground mb-4 text-base">Quick Actions</h3>
               <div className="space-y-2">
@@ -190,7 +208,14 @@ export default function CFOPlatform() {
               </div>
             </div>
           </div>
-        </div>
+        </aside>
+
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/40 z-40 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
 
         <div className="flex-1 flex flex-col min-h-0">
           <div className="flex-1 overflow-hidden">
