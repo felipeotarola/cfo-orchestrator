@@ -1,6 +1,6 @@
 export interface AgentTask {
   id: string
-  type: "bookkeeping" | "invoicing" | "reporting" | "analysis"
+  type: "bookkeeping" | "invoicing" | "reporting" | "analysis" | "receipts"
   description: string
   input: any
   status: "pending" | "processing" | "completed" | "failed"
@@ -19,7 +19,7 @@ export interface AgentResponse {
 
 export interface Agent {
   name: string
-  type: "bookkeeping" | "invoicing" | "reporting"
+  type: "bookkeeping" | "invoicing" | "reporting" | "receipts"
   capabilities: string[]
   isActive: boolean
   processTask(task: AgentTask): Promise<AgentResponse>

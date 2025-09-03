@@ -165,7 +165,8 @@ export class InvoicingAgent implements Agent {
         .select(`
           *,
           clients!inner(name, email, company),
-          invoice_line_items(*)
+          invoice_line_items(*),
+          attachments:attachments!entity_id(id, file_name, file_type, file_url, is_primary)
         `)
 
       if (clientName) {
@@ -204,13 +205,16 @@ export class InvoicingAgent implements Agent {
           const isOverdue = inv.status === "pending" && new Date(inv.due_date) < new Date()
           const isPaid = inv.status === "paid"
           const amount = Number(inv.total_amount).toLocaleString()
+          const hasAttachments = inv.attachments && inv.attachments.length > 0
           
           const statusIcon = isPaid ? "✅" : isOverdue ? "🔴" : "🟡"
           const statusText = isPaid ? "Betald" : isOverdue ? "Försenad" : "Väntande"
+          const attachmentIcon = hasAttachments ? "📎" : ""
           
-          return `${statusIcon} **${inv.invoice_number}** - ${amount} SEK (${statusText})\n` +
+          return `${statusIcon} ${attachmentIcon} **${inv.invoice_number}** - ${amount} SEK (${statusText})\n` +
                  `   📅 Fakturadatum: ${inv.issue_date} | Förfallodatum: ${inv.due_date}\n` +
-                 `   📝 ${inv.notes || 'Ingen kommentar'}`
+                 `   📝 ${inv.notes || 'Ingen kommentar'}` +
+                 (hasAttachments ? `\n   📎 ${inv.attachments.length} bilaga(r)` : '')
         }).join('\n\n')
       }
 

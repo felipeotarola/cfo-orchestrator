@@ -1,147 +1,119 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
+import { useChat } from '@ai-sdk/react'
+import { DefaultChatTransport } from 'ai'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Send, TrendingUp, DollarSign, FileText, Calculator } from "lucide-react"
+import { Send, TrendingUp, DollarSign, FileText, Calculator, Paperclip, X, Image, FileType } from "lucide-react"
+import NextImage from 'next/image'
 
-interface Message {
-  id: string
-  content: string
-  sender: "user" | "cfo"
-  timestamp: Date
-  agentAction?: {
-    agent: string
-    action: string
-    status: "processing" | "completed"
-    result?: any
-  }
+// Convert files to data URLs for AI SDK v5
+async function convertFilesToDataURLs(files: FileList) {
+  return Promise.all(
+    Array.from(files).map(
+      file =>
+        new Promise<{
+          type: 'file';
+          mediaType: string;
+          url: string;
+        }>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            resolve({
+              type: 'file',
+              mediaType: file.type,
+              url: reader.result as string,
+            });
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        }),
+    ),
+  );
 }
 
 export default function CFOPlatform() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      content:
-        "Hello! I'm your AI CFO. I can help you with bookkeeping, invoicing, financial reporting, and strategic insights. What would you like to work on today?",
-      sender: "cfo",
-      timestamp: new Date(),
-    },
-  ])
-  const [inputValue, setInputValue] = useState("")
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [agentStatuses, setAgentStatuses] = useState<
+  const [input, setInput] = useState("")
+  const [files, setFiles] = useState<FileList | undefined>(undefined)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  
+  const { messages, sendMessage, isLoading } = useChat({
+    transport: new DefaultChatTransport({ api: '/api/chat' }),
+    initialMessages: [
+      {
+        id: "1",
+        role: "assistant",
+        parts: [
+          { type: 'text', text: "Hello! I'm your AI CFO. I can help you with bookkeeping, invoicing, financial reporting, and strategic insights. What would you like to work on today?" }
+        ],
+      },
+    ],
+  })
+
+  const [agentStatuses] = useState<
     Array<{ name: string; isActive: boolean; capabilities: string[] }>
   >([
     { name: "Bookkeeping Agent", isActive: true, capabilities: ["Transaction categorization", "Expense tracking"] },
     { name: "Invoicing Agent", isActive: true, capabilities: ["Invoice generation", "Payment tracking"] },
     { name: "Reporting Agent", isActive: true, capabilities: ["Financial reports", "Analytics"] },
+    { name: "Receipts Agent", isActive: true, capabilities: ["Receipt scanning", "Expense management"] },
   ])
-  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim()) return
+  const quickActions = [
+    { label: "Upload receipt", action: "upload_receipt", icon: Paperclip },
+    { label: "Create new invoice", action: "create_invoice", icon: FileText },
+    { label: "Generate financial report", action: "generate_report", icon: TrendingUp },
+    { label: "Record expense", action: "record_expense", icon: Calculator },
+  ]
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content: inputValue,
-      sender: "user",
-      timestamp: new Date(),
-    }
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
 
-    setMessages((prev) => [...prev, userMessage])
-    const currentInput = inputValue
-    setInputValue("")
-    setIsProcessing(true)
-
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ message: currentInput }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to get response from CFO")
-      }
-
-      const data = await response.json()
-
-      const cfoMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: data.response,
-        sender: "cfo",
-        timestamp: new Date(),
-      }
-
-      setMessages((prev) => [...prev, cfoMessage])
-
-      if (data.agentActivities && data.agentActivities.length > 0) {
-        data.agentActivities.forEach((activity: any, index: number) => {
-          setTimeout(
-            () => {
-              const actionMessage: Message = {
-                id: `${Date.now() + index + 2}`,
-                content: `${activity.agent}: ${activity.action}`,
-                sender: "cfo",
-                timestamp: new Date(),
-                agentAction: {
-                  agent: activity.agent,
-                  action: activity.action,
-                  status: activity.status === "completed" ? "completed" : "processing",
-                  result: activity.result,
-                },
-              }
-              setMessages((prev) => [...prev, actionMessage])
-            },
-            (index + 1) * 800,
-          )
-        })
-      }
-
-      if (data.insights && data.insights.length > 0) {
-        setTimeout(
-          () => {
-            const insightsMessage: Message = {
-              id: `${Date.now() + 100}`,
-              content: "Key insights: " + data.insights.join(". "),
-              sender: "cfo",
-              timestamp: new Date(),
-            }
-            setMessages((prev) => [...prev, insightsMessage])
-          },
-          (data.agentActivities?.length || 0) * 800 + 1000,
-        )
-      }
-    } catch (error) {
-      console.error("Chat error:", error)
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: "I encountered an issue processing your request. Please try again.",
-        sender: "cfo",
-        timestamp: new Date(),
-      }
-      setMessages((prev) => [...prev, errorMessage])
-    } finally {
-      setIsProcessing(false)
+  const removeFile = (index: number) => {
+    if (!files) return
+    const dt = new DataTransfer()
+    Array.from(files).forEach((file, i) => {
+      if (i !== index) dt.items.add(file)
+    })
+    setFiles(dt.files.length > 0 ? dt.files : undefined)
+    if (fileInputRef.current) {
+      fileInputRef.current.files = dt.files
     }
   }
 
-  const quickActions = [
-    { icon: Calculator, label: "Categorize recent transactions", action: "categorize" },
-    { icon: FileText, label: "Show invoice status", action: "invoices" },
-    { icon: TrendingUp, label: "Generate financial report", action: "report" },
-    { icon: DollarSign, label: "Analyze cash flow", action: "cashflow" },
-  ]
+  const onSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+
+    const fileParts = files && files.length > 0 ? await convertFilesToDataURLs(files) : []
+
+    await sendMessage({
+      role: 'user',
+      parts: [
+        { type: 'text', text: input },
+        ...fileParts,
+      ],
+    })
+
+    setInput('')
+    setFiles(undefined)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
 
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
@@ -157,12 +129,22 @@ export default function CFOPlatform() {
                 <p className="text-xs text-muted-foreground font-medium">Your intelligent financial orchestrator</p>
               </div>
             </div>
-            <Badge
-              variant="secondary"
-              className="bg-accent/10 text-accent border-accent/20 px-3 py-1 font-semibold text-xs"
-            >
-              ● Connected
-            </Badge>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs"
+                onClick={() => window.open('/dashboard', '_blank')}
+              >
+                📊 Dashboard
+              </Button>
+              <Badge
+                variant="secondary"
+                className="bg-accent/10 text-accent border-accent/20 px-3 py-1 font-semibold text-xs"
+              >
+                ● Connected
+              </Badge>
+            </div>
           </div>
         </div>
       </header>
@@ -178,7 +160,7 @@ export default function CFOPlatform() {
                     key={action.action}
                     variant="ghost"
                     className="w-full justify-start gap-3 h-auto p-3 rounded-lg hover:bg-accent/10 hover:text-accent transition-all duration-200"
-                    onClick={() => setInputValue(action.label)}
+                    onClick={() => setInput(action.label)}
                   >
                     {action.icon && <action.icon className="w-4 h-4 text-accent" />}
                     <span className="text-sm font-medium">{action.label}</span>
@@ -193,11 +175,15 @@ export default function CFOPlatform() {
                 {agentStatuses.map((agent) => (
                   <div key={agent.name} className="flex items-center gap-3 p-3 rounded-lg bg-muted/20">
                     <div
-                      className={`w-2 h-2 rounded-full ${agent.isActive ? "bg-accent animate-pulse shadow-sm" : "bg-muted-foreground/50"}`}
-                    ></div>
+                      className={`w-2 h-2 rounded-full ${
+                        agent.isActive ? "bg-green-500" : "bg-gray-400"
+                      }`}
+                    />
                     <div className="flex-1">
-                      <span className="text-sm font-medium text-foreground block">{agent.name}</span>
-                      <span className="text-xs text-muted-foreground">{agent.capabilities.join(", ")}</span>
+                      <p className="text-sm font-medium text-foreground">{agent.name}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {agent.capabilities.join(", ")}
+                      </p>
                     </div>
                   </div>
                 ))}
@@ -206,93 +192,164 @@ export default function CFOPlatform() {
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col bg-background min-h-0">
-          <div className="flex-1 overflow-hidden">
-            <ScrollArea className="h-full">
-              <div className="p-6">
-                <div className="max-w-4xl mx-auto space-y-6">
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`flex gap-4 ${message.sender === "user" ? "justify-end" : "justify-start"}`}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <ScrollArea className="flex-1 px-6 py-4">
+            <div className="space-y-6 max-w-4xl mx-auto">
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`flex gap-4 ${
+                    message.role === "user" ? "flex-row-reverse" : "flex-row"
+                  }`}
+                >
+                  <Avatar className="w-8 h-8 shadow-md">
+                    <AvatarFallback
+                      className={`text-xs font-bold ${
+                        message.role === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-accent text-accent-foreground"
+                      }`}
                     >
-                      {message.sender === "cfo" && (
-                        <Avatar className="w-10 h-10 bg-gradient-to-br from-primary to-primary/80 shadow-sm flex-shrink-0">
-                          <AvatarFallback className="bg-transparent text-primary-foreground text-sm font-bold">
-                            CFO
-                          </AvatarFallback>
-                        </Avatar>
-                      )}
-
-                      <div className={`max-w-[75%] ${message.sender === "user" ? "order-first" : ""}`}>
-                        <div
-                          className={`rounded-2xl px-5 py-4 shadow-sm ${
-                            message.sender === "user"
-                              ? "bg-primary text-primary-foreground ml-auto"
-                              : "bg-card/80 text-foreground border border-border/50 backdrop-blur-sm"
-                          }`}
-                        >
-                          <p className="text-sm leading-relaxed font-medium">{message.content}</p>
-                        </div>
-
-                        {message.agentAction && (
-                          <div className="mt-3 p-4 bg-accent/5 border border-accent/20 rounded-xl backdrop-blur-sm">
-                            <div className="flex items-center gap-3">
-                              <div
-                                className={`w-2 h-2 rounded-full ${message.agentAction.status === "completed" ? "bg-green-500" : "bg-accent animate-pulse"}`}
-                              ></div>
-                              <span className="text-sm font-bold text-accent">{message.agentAction.agent}</span>
-                            </div>
-                            <p className="text-sm text-muted-foreground mt-2 font-medium">
-                              {message.agentAction.action}
-                            </p>
-                          </div>
-                        )}
-
-                        <p className="text-xs text-muted-foreground mt-2 font-medium">
-                          {message.timestamp.toLocaleTimeString()}
+                      {message.role === "user" ? "U" : "AI"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div
+                    className={`flex-1 rounded-xl p-4 shadow-sm border ${
+                      message.role === "user"
+                        ? "bg-primary/10 border-primary/20 ml-12"
+                        : "bg-card border-border/50 mr-12"
+                    }`}
+                  >
+                    <div className="prose prose-sm max-w-none">
+                      {/* Handle different content types */}
+                      {typeof message.content === 'string' ? (
+                        <p className="text-sm text-foreground whitespace-pre-wrap m-0">
+                          {message.content}
                         </p>
-                      </div>
-
-                      {message.sender === "user" && (
-                        <Avatar className="w-10 h-10 bg-secondary shadow-sm flex-shrink-0">
-                          <AvatarFallback className="bg-secondary text-secondary-foreground text-sm font-bold">
-                            You
-                          </AvatarFallback>
-                        </Avatar>
+                      ) : (
+                        message.parts?.map((part: any, index: number) => {
+                          if (part.type === 'text') {
+                            return (
+                              <p key={index} className="text-sm text-foreground whitespace-pre-wrap m-0">
+                                {part.text}
+                              </p>
+                            )
+                          }
+                          if (part.type === 'file' && part.mediaType?.startsWith('image/')) {
+                            return (
+                              <div key={index} className="mt-2">
+                                <NextImage
+                                  src={part.url}
+                                  width={300}
+                                  height={200}
+                                  alt="uploaded image"
+                                  className="rounded-lg border"
+                                />
+                              </div>
+                            )
+                          }
+                          if (part.type === 'file' && part.mediaType === 'application/pdf') {
+                            return (
+                              <div key={index} className="mt-2 p-2 bg-gray-100 rounded">
+                                <p className="text-sm">📄 PDF Document</p>
+                              </div>
+                            )
+                          }
+                          return null
+                        })
                       )}
                     </div>
-                  ))}
-                  <div ref={messagesEndRef} />
+                  </div>
                 </div>
-              </div>
-            </ScrollArea>
-          </div>
+              ))}
+              
+              {isLoading && (
+                <div className="flex gap-4">
+                  <Avatar className="w-8 h-8 shadow-md">
+                    <AvatarFallback className="bg-accent text-accent-foreground text-xs font-bold">
+                      AI
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 rounded-xl p-4 shadow-sm border bg-card border-border/50 mr-12">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
+                      <div className="w-2 h-2 bg-accent rounded-full animate-pulse delay-75"></div>
+                      <div className="w-2 h-2 bg-accent rounded-full animate-pulse delay-150"></div>
+                      <span className="text-sm text-muted-foreground ml-2">AI CFO is analyzing...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <div ref={messagesEndRef} />
+            </div>
+          </ScrollArea>
 
-          <div className="flex-shrink-0 border-t border-border/50 bg-card/50 backdrop-blur-xl">
-            <div className="max-w-4xl mx-auto p-6">
-              <div className="flex gap-4">
-                <Input
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Ask your CFO anything about your finances..."
-                  className="flex-1 h-12 px-4 rounded-xl border-border/50 bg-background/80 backdrop-blur-sm font-medium placeholder:text-muted-foreground/70"
-                  onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
-                  disabled={isProcessing}
+          <div className="flex-shrink-0 p-6 border-t border-border/50 bg-card/50 backdrop-blur-sm">
+            {files && files.length > 0 && (
+              <div className="mb-4 flex flex-wrap gap-2">
+                {Array.from(files).map((file, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center gap-2 bg-accent/10 text-accent rounded-lg px-3 py-2 text-sm border border-accent/20"
+                  >
+                    {file.type.startsWith('image/') ? (
+                      <Image className="w-4 h-4" />
+                    ) : (
+                      <FileType className="w-4 h-4" />
+                    )}
+                    <span className="font-medium">{file.name}</span>
+                    <span className="text-xs text-muted-foreground">({formatFileSize(file.size)})</span>
+                    <button
+                      onClick={() => removeFile(index)}
+                      className="ml-1 text-muted-foreground hover:text-destructive"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <form onSubmit={onSubmit} className="space-y-3">
+              <div className="flex gap-3">
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  multiple
+                  ref={fileInputRef}
+                  onChange={(e) => setFiles(e.target.files || undefined)}
+                  className="hidden"
                 />
                 <Button
-                  onClick={handleSendMessage}
-                  disabled={isProcessing || !inputValue.trim()}
-                  size="icon"
-                  className="h-12 w-12 rounded-xl bg-accent hover:bg-accent/90 text-accent-foreground shadow-sm"
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 text-xs"
                 >
-                  <Send className="w-5 h-5" />
+                  <Paperclip className="w-4 h-4" />
+                  Attach
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground mt-3 font-medium text-center">
-                Your CFO orchestrates specialized agents for bookkeeping, invoicing, and reporting
-              </p>
-            </div>
+              
+              <div className="flex gap-3">
+                <Input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Ask your AI CFO anything about your finances..."
+                  className="flex-1 bg-background/80 backdrop-blur-sm border-border/50 focus:border-accent/50 focus:ring-accent/20"
+                  disabled={isLoading}
+                />
+                <Button
+                  type="submit"
+                  disabled={(!input.trim() && !files?.length) || isLoading}
+                  className="bg-accent hover:bg-accent/90 text-accent-foreground px-6"
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       </div>

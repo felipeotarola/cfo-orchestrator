@@ -2,6 +2,7 @@ import type { Agent, AgentTask, CFORequest } from "./types"
 import { BookkeepingAgent } from "./bookkeeping-agent"
 import { InvoicingAgent } from "./invoicing-agent"
 import { ReportingAgent } from "./reporting-agent"
+import { ReceiptsAgent } from "./receipts-agent"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 export class CFOOrchestrator {
@@ -17,11 +18,13 @@ export class CFOOrchestrator {
   private initializeAgents() {
     const bookkeepingAgent = new BookkeepingAgent(this.supabase)
     const invoicingAgent = new InvoicingAgent(this.supabase)
-    const reportingAgent = new ReportingAgent(this.supabase)
+    const reportingAgent = new ReportingAgent()
+    const receiptsAgent = new ReceiptsAgent(this.supabase)
 
     this.registerAgent(bookkeepingAgent)
     this.registerAgent(invoicingAgent)
     this.registerAgent(reportingAgent)
+    this.registerAgent(receiptsAgent)
   }
 
   registerAgent(agent: Agent) {
@@ -68,7 +71,7 @@ export class CFOOrchestrator {
             agent: agent.name,
             action: task.description,
             status: "failed",
-            result: { error: error.message },
+            result: { error: error instanceof Error ? error.message : String(error) },
           })
         }
       }
@@ -155,6 +158,11 @@ export class CFOOrchestrator {
       requiredAgents.push("Invoicing Agent")
     }
 
+    if (message.includes("receipt") || message.includes("kvitto") || message.includes("expense photo") || message.includes("upload photo") || message.includes("scan receipt")) {
+      intent = "receipts"
+      requiredAgents.push("Receipts Agent")
+    }
+
     if (message.includes("report") || message.includes("analysis") || message.includes("summary")) {
       intent = "reporting"
       requiredAgents.push("Reporting Agent")
@@ -184,6 +192,7 @@ export class CFOOrchestrator {
     const descriptions: Record<string, string> = {
       bookkeeping: `Analyzing ${request.intent} request: "${request.userMessage}"`,
       invoicing: `Processing invoice-related request: "${request.userMessage}"`,
+      receipts: `Processing receipt-related request: "${request.userMessage}"`,
       reporting: `Generating financial insights for: "${request.userMessage}"`,
     }
 
@@ -194,6 +203,7 @@ export class CFOOrchestrator {
     const responses: Record<string, string> = {
       bookkeeping: "I've analyzed your bookkeeping data and found some key insights.",
       invoicing: "I've reviewed your invoicing and payment information.",
+      receipts: "I've processed your receipt and expense information.",
       reporting: "I've generated comprehensive financial reports and analysis.",
       analysis: "I've performed a detailed financial analysis across multiple areas.",
       general: "I've coordinated with my specialized agents to address your request.",
