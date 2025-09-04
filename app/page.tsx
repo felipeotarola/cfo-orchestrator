@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Send, TrendingUp, DollarSign, FileText, Calculator, Paperclip, X, Image, FileType } from "lucide-react"
+import { Send, TrendingUp, DollarSign, FileText, Calculator, Paperclip, X, Image, FileType, Menu } from "lucide-react"
 import NextImage from 'next/image'
 
 // Convert files to data URLs for AI SDK v5
@@ -39,6 +39,7 @@ async function convertFilesToDataURLs(files: FileList) {
 export default function CFOPlatform() {
   const [input, setInput] = useState("")
   const [files, setFiles] = useState<FileList | undefined>(undefined)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
@@ -53,7 +54,7 @@ export default function CFOPlatform() {
         ],
       },
     ],
-  })
+  } as any) as any
 
   const [agentStatuses] = useState<
     Array<{ name: string; isActive: boolean; capabilities: string[] }>
@@ -67,6 +68,12 @@ export default function CFOPlatform() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
+
+  useEffect(() => {
+    if (window.innerWidth < 768) {
+      setIsSidebarOpen(false)
+    }
+  }, [])
 
   const quickActions = [
     { label: "Visa finansiell översikt", action: "financial_overview", icon: TrendingUp },
@@ -119,29 +126,37 @@ export default function CFOPlatform() {
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       <header className="flex-shrink-0 border-b border-border/50 bg-card/80 backdrop-blur-xl">
         <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg">
-                <DollarSign className="w-6 h-6 text-primary-foreground" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                  className="mr-2"
+                >
+                  {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                </Button>
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg">
+                  <DollarSign className="w-6 h-6 text-primary-foreground" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-foreground tracking-tight">AI CFO Platform</h1>
+                  <p className="text-xs text-muted-foreground font-medium">Your intelligent financial orchestrator</p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-foreground tracking-tight">AI CFO Platform</h1>
-                <p className="text-xs text-muted-foreground font-medium">Your intelligent financial orchestrator</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={() => window.open('/dashboard', '_blank')}
-              >
-                📊 Dashboard
-              </Button>
-              <Badge
-                variant="secondary"
-                className="bg-accent/10 text-accent border-accent/20 px-3 py-1 font-semibold text-xs"
-              >
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => window.open('/dashboard', '_blank')}
+                  >
+                    📊 Dashboard
+                  </Button>
+                  <Badge
+                    variant="secondary"
+                    className="bg-accent/10 text-accent border-accent/20 px-3 py-1 font-semibold text-xs"
+                  >
                 ● Connected
               </Badge>
             </div>
@@ -149,8 +164,8 @@ export default function CFOPlatform() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
-        <div className="w-80 flex-shrink-0 border-r border-border/50 bg-card/30 backdrop-blur-sm">
+        <div className="flex-1 flex overflow-hidden">
+        <div className={`${isSidebarOpen ? 'block' : 'hidden'} w-80 flex-shrink-0 border-r border-border/50 bg-card/30 backdrop-blur-sm`}>
           <div className="h-full flex flex-col">
             <div className="p-6 border-b border-border/50">
               <h3 className="font-bold text-foreground mb-4 text-base">Quick Actions</h3>
@@ -196,7 +211,7 @@ export default function CFOPlatform() {
           <div className="flex-1 overflow-hidden">
             <ScrollArea className="h-full px-6 py-4">
               <div className="space-y-6 max-w-4xl mx-auto pb-4">
-                {messages.map((message) => (
+                {messages.map((message: any) => (
                 <div
                   key={message.id}
                   className={`flex gap-4 ${
