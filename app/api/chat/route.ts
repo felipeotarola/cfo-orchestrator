@@ -106,6 +106,8 @@ Svara alltid på svenska och fokusera på affärsnytta och konkreta rekommendati
     const result = streamText({
       model: openai('gpt-4o'),
       messages: convertToModelMessages(messages),
+      // @ts-expect-error maxSteps supported at runtime
+      maxSteps: 5,
       tools: {
         // Use CFO Orchestrator for complex requests
         processWithCFOOrchestrator: tool({
