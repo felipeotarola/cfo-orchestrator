@@ -106,6 +106,7 @@ Svara alltid på svenska och fokusera på affärsnytta och konkreta rekommendati
     const result = streamText({
       model: openai('gpt-4o'),
       messages: convertToModelMessages(messages),
+      maxSteps: 2,
       tools: {
         // Use CFO Orchestrator for complex requests
         processWithCFOOrchestrator: tool({
