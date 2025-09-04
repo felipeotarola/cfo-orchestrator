@@ -93,8 +93,8 @@ export class CFOOrchestrator {
       const { object: analysis } = await generateObject({
         model: openai('gpt-4o-mini'),
         schema: z.object({
-          intent: z.enum(['invoicing', 'bookkeeping', 'reporting', 'general']),
-          requiredAgents: z.array(z.enum(['Invoicing Agent', 'Bookkeeping Agent', 'Reporting Agent'])),
+          intent: z.enum(['invoicing', 'bookkeeping', 'reporting', 'receipts', 'general']),
+          requiredAgents: z.array(z.enum(['Invoicing Agent', 'Bookkeeping Agent', 'Reporting Agent', 'Receipts Agent'])),
           reasoning: z.string(),
           entities: z.object({
             clientName: z.string().optional(),
@@ -111,18 +111,21 @@ export class CFOOrchestrator {
         - Invoicing: creating invoices, viewing invoices, payment tracking, client billing
         - Bookkeeping: expense categorization, transaction analysis, account reconciliation
         - Reporting: financial reports, summaries, insights, analytics
+        - Receipts: receipt management, expense tracking, receipt photos, expense approval
         
         Look for:
         - Client names (like "Joakim", "Joakim Svensson")
-        - Action words (create, show, view, generate, analyze)
-        - Financial terms (invoice, payment, expense, report)
+        - Action words (create, show, view, generate, analyze, upload, scan)
+        - Financial terms (invoice, payment, expense, report, receipt, kvitto)
         - Amounts or numbers (120000, SEK)
         
         Examples:
         - "create a new for him Joakim Svensson" → invoicing (create invoice for Joakim)
         - "show Joakim's invoices" → invoicing (view invoices)
         - "categorize expenses" → bookkeeping
-        - "generate financial report" → reporting`,
+        - "generate financial report" → reporting
+        - "add a new receipt" → receipts (create receipt)
+        - "upload receipt photo" → receipts (upload photo)`,
       })
 
       return {

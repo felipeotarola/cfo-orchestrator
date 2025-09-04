@@ -123,7 +123,7 @@ export function FileUpload({
       <div
         className={`
           border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
-          ${dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}
+          ${dragActive ? 'border-gray-500 bg-gray-50' : 'border-gray-300 hover:border-gray-400'}
           ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}
         `}
         onDragEnter={handleDrag}
@@ -134,7 +134,7 @@ export function FileUpload({
       >
         {isUploading ? (
           <div className="flex items-center justify-center space-x-2">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-600"></div>
             <span className="text-gray-600">Uploading...</span>
           </div>
         ) : (
